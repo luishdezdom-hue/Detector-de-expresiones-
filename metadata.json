@@ -1,0 +1,7 @@
+{
+  "name": "Detector de Emociones Faciales",
+  "description": "Reconocimiento facial y análisis de expresiones con redes neuronales convolucionales (CNN Keras/TensorFlow), retroalimentación interactiva y guía científica de emociones en tonos claros y luminosos.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
