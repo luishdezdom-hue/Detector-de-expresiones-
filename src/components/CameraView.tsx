@@ -218,21 +218,39 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
       )}
 
       {/* 3. BIOMETRIC OVAL GUIDE: Centered oval framing so the camera detects faces as an oval */}
-      {!currentImageSource && cameraActive && !cameraError && (
-        <div className="absolute inset-0 pointer-events-none z-10 flex flex-col items-center justify-center">
+      {(!currentImageSource || isAnalyzing) && cameraActive && !cameraError && (
+        <div className="absolute inset-0 pointer-events-none z-20 flex flex-col items-center justify-center">
           {/* Subtle vignette darkening outside */}
-          <div className="relative w-[55%] sm:w-[46%] aspect-3/4 max-w-[280px] rounded-[50%] border-2 border-dashed border-red-500 shadow-[0_0_0_9999px_rgba(28,25,23,0.35)] flex items-center justify-center transition-all duration-300">
+          <div
+            className={`relative w-[55%] sm:w-[46%] aspect-3/4 max-w-[280px] rounded-[50%] border-2 flex items-center justify-center transition-all duration-500 overflow-hidden ${
+              isAnalyzing
+                ? 'border-solid border-red-500 animate-oval-scan-pulse'
+                : 'border-dashed border-red-500 shadow-[0_0_0_9999px_rgba(28,25,23,0.35)]'
+            }`}
+          >
             {/* Soft oval scanning label */}
-            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-stone-900/85 backdrop-blur-xs text-red-200 text-[11px] font-medium px-2.5 py-0.5 rounded-full border border-red-500/40 whitespace-nowrap">
-              Encuadre de Óvalo Facial
+            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-stone-900/90 backdrop-blur-xs text-red-200 text-[11px] font-medium px-2.5 py-0.5 rounded-full border border-red-500/50 whitespace-nowrap z-30 transition-all duration-300 shadow-xs flex items-center gap-1.5">
+              {isAnalyzing && <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-ping" />}
+              <span>{isAnalyzing ? 'Escaneando Óvalo Facial...' : 'Encuadre de Óvalo Facial'}</span>
             </div>
 
-            {/* Pulsing oval halo */}
-            <div className="absolute inset-0 rounded-[50%] border border-red-500/60 animate-pulse" />
+            {/* Pulsing oval halo with smooth CSS transition */}
+            <div
+              className={`absolute inset-0 rounded-[50%] border transition-all duration-500 ${
+                isAnalyzing
+                  ? 'border-red-400 shadow-[inset_0_0_24px_rgba(239,68,68,0.55)] animate-pulse'
+                  : 'border-red-500/60 animate-pulse'
+              }`}
+            />
+
+            {/* Subtle horizontal scanning laser line when isAnalyzing is active */}
+            {isAnalyzing && (
+              <div className="absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-red-400 to-transparent shadow-[0_0_10px_rgba(239,68,68,0.95)] animate-oval-scan-line pointer-events-none" />
+            )}
           </div>
 
-          <p className="absolute bottom-4 text-[11px] font-medium text-amber-50/90 bg-stone-900/80 backdrop-blur-xs px-3 py-1 rounded-full border border-red-500/30 shadow-xs">
-            Coloca tu rostro dentro del óvalo
+          <p className="absolute bottom-4 text-[11px] font-medium text-amber-50/90 bg-stone-900/85 backdrop-blur-xs px-3.5 py-1 rounded-full border border-red-500/40 shadow-sm transition-all duration-300">
+            {isAnalyzing ? 'Procesando micro-expresiones con CNN...' : 'Coloca tu rostro dentro del óvalo'}
           </p>
         </div>
       )}
@@ -273,22 +291,9 @@ export const CameraView = forwardRef<CameraViewHandle, CameraViewProps>(({
         </div>
       )}
 
-      {/* 5. Scanning / Analyzing Loading Animation */}
+      {/* 5. Scanning / Analyzing Loading Subtitle Indicator */}
       {isAnalyzing && (
-        <div className="absolute inset-0 bg-stone-950/65 backdrop-blur-[3px] z-25 flex flex-col items-center justify-center text-white">
-          <div className="relative w-16 h-16 mb-3 flex items-center justify-center">
-            {/* Animated oval scanner */}
-            <div className="w-14 h-18 rounded-[50%] border-2 border-red-500/40 animate-ping absolute" />
-            <div className="w-14 h-18 rounded-[50%] border-2 border-t-red-500 border-r-transparent border-b-transparent border-l-transparent animate-spin" />
-            <Sparkles className="w-6 h-6 text-red-400 animate-pulse" />
-          </div>
-          <p className="text-xs font-semibold tracking-wider uppercase text-amber-200">
-            Analizando Óvalo Facial...
-          </p>
-          <span className="text-[11px] text-stone-300 mt-1">
-            Reconociendo emociones y micro-expresiones
-          </span>
-        </div>
+        <div className="absolute inset-0 bg-stone-950/25 pointer-events-none z-10 flex flex-col items-center justify-center text-white transition-opacity duration-300" />
       )}
 
       {/* 6. Top controls */}

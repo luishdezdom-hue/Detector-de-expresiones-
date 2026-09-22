@@ -74,7 +74,19 @@ async function startServer() {
       let mimeType = "image/jpeg";
       let base64Data = image;
 
-      if (image.startsWith("data:")) {
+      if (image.startsWith("http://") || image.startsWith("https://")) {
+        try {
+          const fetchRes = await fetch(image);
+          if (fetchRes.ok) {
+            const arrayBuffer = await fetchRes.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+            mimeType = fetchRes.headers.get("content-type") || "image/jpeg";
+            base64Data = buffer.toString("base64");
+          }
+        } catch (fetchErr) {
+          console.warn("Could not fetch remote image for analysis:", fetchErr);
+        }
+      } else if (image.startsWith("data:")) {
         const matches = image.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
         if (matches && matches.length === 3) {
           mimeType = matches[1];
@@ -315,6 +327,133 @@ Si no hay ningún rostro humano visible o la imagen está completamente oscura/b
       return res.status(500).json({
         error: "Ocurrió un problema inesperado al procesar la solicitud.",
         details: err?.message || String(err),
+      });
+    }
+  });
+
+  // Emotional Assistant Chatbot Endpoint
+  app.post("/api/chat-assistant", async (req, res) => {
+    try {
+      const { message, detectedEmotion, emotionValence, history = [] } = req.body;
+      const userMessage = (message || "").trim();
+      const currentEmotion = (detectedEmotion || "Calma").toLowerCase();
+
+      if (!userMessage) {
+        return res.status(400).json({ error: "El mensaje no puede estar vacío." });
+      }
+
+      // Determine emotional archetype
+      const isSadness =
+        currentEmotion.includes("trist") ||
+        currentEmotion.includes("melanc") ||
+        currentEmotion.includes("desánimo") ||
+        currentEmotion.includes("pena");
+
+      const isStress =
+        currentEmotion.includes("estr") ||
+        currentEmotion.includes("ansie") ||
+        currentEmotion.includes("tensi") ||
+        currentEmotion.includes("agobi") ||
+        currentEmotion.includes("fatig") ||
+        currentEmotion.includes("enoj") ||
+        currentEmotion.includes("alerta") ||
+        currentEmotion.includes("cansan");
+
+      const isHappiness =
+        currentEmotion.includes("felic") ||
+        currentEmotion.includes("alegr") ||
+        currentEmotion.includes("entus") ||
+        currentEmotion.includes("optim") ||
+        currentEmotion.includes("sonris");
+
+      let actionType: "support" | "breathing" | "motivation" | "general" = "general";
+      if (isSadness) actionType = "support";
+      else if (isStress) actionType = "breathing";
+      else if (isHappiness) actionType = "motivation";
+
+      const ai = getGenAI();
+      if (ai) {
+        try {
+          const systemInstruction = `Eres el Asistente Emocional Inteligente de la plataforma de detección facial biométrica.
+Tu prioridad fundamental es calibrar tu tono, empatía y contenido según la emoción detectada en el usuario:
+- Emoción detectada actualmente: "${detectedEmotion || "Neutral / Calma"}" (Valencia: ${emotionValence || "Equilibrada"}).
+
+Directrices según la emoción:
+1. TRISTEZA: Ofrece conversaciones de apoyo emocional profundo. Valida sus sentimientos con calidez, hazle saber que no está solo/a y que es válido permitirse sentir. Escucha activamente sin sermones ni positividad tóxica.
+2. ESTRÉS / TENSIÓN / ANSIEDAD: Guía ejercicios de respiración (por ejemplo, el método 4-7-8 o respiración cuadrada), invita a relajar los hombros y la mandíbula, y brinda un espacio seguro con ritmo pausado y tranquilizador.
+3. FELICIDAD / ALEGRÍA: Envía mensajes motivadores y celebra este momento de bienestar. Ayúdale a anclar esa sensación positiva para potenciar sus proyectos, gratitud y relaciones.
+4. OTRAS EMOCIONES: Responde con presencia empática, escucha activa y balance.
+
+Formato: Responde en español, de forma cálida, cercana, sin tecnicismos innecesarios, en 1 o 2 párrafos concisos y humanos.`;
+
+          // Format contents from history
+          const contents: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> = [];
+          
+          if (Array.isArray(history)) {
+            history.slice(-6).forEach((h: any) => {
+              if (h.role === "user" || h.role === "model") {
+                contents.push({
+                  role: h.role,
+                  parts: [{ text: String(h.text || "") }],
+                });
+              }
+            });
+          }
+
+          contents.push({
+            role: "user",
+            parts: [{ text: userMessage }],
+          });
+
+          const response = await ai.models.generateContent({
+            model: "gemini-3.8-flash",
+            contents,
+            config: {
+              systemInstruction,
+              temperature: 0.7,
+              maxOutputTokens: 600,
+            },
+          });
+
+          const replyText = response.text || "";
+          if (replyText.trim()) {
+            return res.json({
+              reply: replyText.trim(),
+              actionType,
+              detectedEmotion,
+            });
+          }
+        } catch (geminiErr: any) {
+          console.warn("Gemini chat fallback invoked due to:", geminiErr?.message);
+        }
+      }
+
+      // Robust fallback responses calibrated to the detected emotion
+      let fallbackReply = "";
+      if (isSadness) {
+        fallbackReply =
+          "Siento que estés pasando por este momento de tristeza o desánimo. Tus emociones son completamente válidas y está bien no estar bien todo el tiempo. Tómate el tiempo que necesites, respira hondo y recuerda que estoy aquí para escucharte y acompañarte. ¿Hay algo específico que te gustaría expresar o prefieres que conversemos de algo que te reconforte?";
+      } else if (isStress) {
+        fallbackReply =
+          "Noto que la tensión o el estrés se están manifestando en tu expresión. Hagamos una pausa breve de respiración guiada: inhala profundamente por la nariz durante 4 segundos, retén el aire 4 segundos sintiendo la calma, y exhala suavemente por la boca durante 6 segundos. Suelta la mandíbula y relaja los hombros. ¿Sientes una pequeña diferencia al soltar el aire?";
+      } else if (isHappiness) {
+        fallbackReply =
+          "¡Qué alegría percibir esa sonrisa y bienestar en tu rostro! La felicidad y el optimismo tienen un impacto increíble en nuestra creatividad y salud. Aprovecha esta energía para inspirar a quienes te rodean o dedicar un momento a agradecer lo que hoy te hace sonreír. ¿Qué es lo que más te emociona en este momento?";
+      } else {
+        fallbackReply =
+          "Te percibo en un estado de equilibrio y atención. Estar presentes y conectar con cómo nos sentimos en cada instante es clave para nuestro bienestar. ¿En qué puedo acompañarte o qué tema te gustaría explorar hoy?";
+      }
+
+      return res.json({
+        reply: fallbackReply,
+        actionType,
+        detectedEmotion,
+      });
+    } catch (err: any) {
+      console.error("Error in chat-assistant endpoint:", err);
+      return res.status(500).json({
+        error: "No se pudo procesar la conversación en este momento.",
+        details: err?.message,
       });
     }
   });

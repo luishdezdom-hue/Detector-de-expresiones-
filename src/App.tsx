@@ -4,6 +4,8 @@ import { IntuitiveControls } from './components/IntuitiveControls';
 import { ResultsPage } from './components/ResultsPage';
 import { EmotionEducation } from './components/EmotionEducation';
 import { EmotionHistory } from './components/EmotionHistory';
+import { EmotionReports } from './components/EmotionReports';
+import { EmotionChatbot } from './components/EmotionChatbot';
 import { SamplePhotosModal } from './components/SamplePhotosModal';
 import { AnalysisResult, DetectedFace, UserFeedback } from './types';
 import { soundFx } from './utils/sound';
@@ -18,12 +20,14 @@ import {
   Camera,
   BookOpen,
   Cpu,
+  BarChart3,
+  MessageSquareHeart,
 } from 'lucide-react';
 
 const LOCAL_STORAGE_HISTORY_KEY = 'facial_emotion_scan_history_v2';
 
 export default function App() {
-  const [activePage, setActivePage] = useState<'camera' | 'results' | 'education'>('camera');
+  const [activePage, setActivePage] = useState<'camera' | 'results' | 'education' | 'reports' | 'chat'>('camera');
   const [currentResult, setCurrentResult] = useState<AnalysisResult | null>(null);
   const [history, setHistory] = useState<AnalysisResult[]>(() => {
     try {
@@ -63,6 +67,9 @@ export default function App() {
   // Ref to the camera view for direct capture
   const cameraRef = useRef<CameraViewHandle | null>(null);
 
+  // Ref to prevent analysis race conditions and frozen state
+  const isAnalyzingRef = useRef<boolean>(false);
+
   // Save history to localStorage
   useEffect(() => {
     try {
@@ -74,7 +81,8 @@ export default function App() {
 
   // Core analysis function: combines multimodal vision + client-side TensorFlow / Keras CNN
   const analyzeImage = useCallback(async (imageDataUrl: string) => {
-    if (isAnalyzing) return;
+    if (isAnalyzingRef.current) return;
+    isAnalyzingRef.current = true;
     setIsAnalyzing(true);
     setErrorMessage(null);
 
@@ -136,9 +144,10 @@ export default function App() {
       console.error('Error in analyzeImage:', err);
       setErrorMessage(err.message || 'No se pudo completar el análisis facial. Intenta de nuevo.');
     } finally {
+      isAnalyzingRef.current = false;
       setIsAnalyzing(false);
     }
-  }, [isAnalyzing]);
+  }, []);
 
   // Handle saving user feedback for a scan
   const handleSaveFeedback = useCallback((resultId: string, feedback: UserFeedback) => {
@@ -226,10 +235,10 @@ export default function App() {
   // Select sample image via server-side proxy
   const handleSelectSample = async (sample: SampleImage) => {
     setIsAutoScan(false);
-    setIsAnalyzing(true);
     setErrorMessage(null);
 
     try {
+      setIsAnalyzing(true);
       const proxyRes = await fetch('/api/proxy-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -242,11 +251,15 @@ export default function App() {
 
       const proxyData = await proxyRes.json();
       setCurrentImageSource(proxyData.dataUrl);
-      analyzeImage(proxyData.dataUrl);
+      isAnalyzingRef.current = false;
+      setIsAnalyzing(false);
+      await analyzeImage(proxyData.dataUrl);
     } catch (err: any) {
       console.warn('Fallback to direct url for sample:', err);
       setCurrentImageSource(sample.url);
-      analyzeImage(sample.url);
+      isAnalyzingRef.current = false;
+      setIsAnalyzing(false);
+      await analyzeImage(sample.url);
     }
   };
 
@@ -330,6 +343,38 @@ export default function App() {
                 <span>Resultados</span>
               </button>
             )}
+
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playClick();
+                setActivePage('reports');
+              }}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activePage === 'reports'
+                  ? 'bg-stone-900 text-stone-50 shadow-xs'
+                  : 'bg-emerald-50 text-emerald-950 border border-emerald-200 hover:bg-emerald-100/70'
+              }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Reportes</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                soundFx.playClick();
+                setActivePage('chat');
+              }}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activePage === 'chat'
+                  ? 'bg-stone-900 text-stone-50 shadow-xs'
+                  : 'bg-rose-50 text-rose-950 border border-rose-200 hover:bg-rose-100/70'
+              }`}
+            >
+              <MessageSquareHeart className="w-3.5 h-3.5 text-rose-600" />
+              <span>Asistente</span>
+            </button>
 
             <button
               type="button"
@@ -474,8 +519,33 @@ export default function App() {
               setActivePage('camera');
             }}
             onViewHistory={() => setIsHistoryOpen(true)}
+            onViewReports={() => setActivePage('reports')}
+            onOpenChat={() => setActivePage('chat')}
             onExploreEmotion={(emotionId) => handleNavigateToEducation(emotionId)}
             onSaveFeedback={handleSaveFeedback}
+          />
+        )}
+
+        {activePage === 'chat' && (
+          /* APARTADO 5: ASISTENTE CONVERSACIONAL INTELIGENTE SEGÚN EMOCIÓN DETECTADA */
+          <EmotionChatbot
+            currentResult={currentResult}
+            onBackToCamera={() => {
+              setActivePage('camera');
+            }}
+          />
+        )}
+
+        {activePage === 'reports' && (
+          /* APARTADO 4: REPORTES DIARIOS Y SEMANALES CON ESTADÍSTICAS Y EXPORTAR A PDF */
+          <EmotionReports
+            history={history}
+            onLoadSampleHistory={(samples) => {
+              setHistory(samples);
+            }}
+            onBackToCamera={() => {
+              setActivePage('camera');
+            }}
           />
         )}
 

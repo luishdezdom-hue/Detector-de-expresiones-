@@ -13,7 +13,19 @@ import {
   BookOpen,
   ArrowRight,
   Activity,
+  Compass,
+  BarChart3,
+  MessageSquareHeart,
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Radar,
+  Tooltip,
+} from 'recharts';
 import { AnalysisResult, DetectedFace, UserFeedback } from '../types';
 import { FeedbackSection } from './FeedbackSection';
 import { soundFx } from '../utils/sound';
@@ -22,14 +34,36 @@ interface ResultsPageProps {
   result: AnalysisResult;
   onBackToCamera: () => void;
   onViewHistory: () => void;
+  onViewReports?: () => void;
+  onOpenChat?: () => void;
   onExploreEmotion?: (emotionId: string) => void;
   onSaveFeedback?: (resultId: string, feedback: UserFeedback) => void;
 }
+
+// Custom Tooltip component for Recharts RadarChart
+const CustomRadarTooltip = ({ active, payload }: any) => {
+  if (active && payload && payload.length) {
+    const data = payload[0]?.payload;
+    if (!data) return null;
+    return (
+      <div className="bg-stone-900/95 backdrop-blur-xs text-stone-100 px-3 py-2 rounded-xl text-xs shadow-lg border border-stone-700/80 pointer-events-none">
+        <p className="font-bold text-amber-200">{data.fullLabel || data.emotion}</p>
+        <p className="font-mono text-xs text-stone-300 mt-1 flex items-center gap-1.5">
+          <span>Probabilidad CNN:</span>
+          <span className="font-bold text-red-400 text-sm">{data.probabilidad}%</span>
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
 
 export const ResultsPage: React.FC<ResultsPageProps> = ({
   result,
   onBackToCamera,
   onViewHistory,
+  onViewReports,
+  onOpenChat,
   onExploreEmotion,
   onSaveFeedback,
 }) => {
@@ -44,6 +78,26 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({
       second: '2-digit',
     });
   };
+
+  // Canonical order for emotions around the radar chart
+  const canonicalOrder = ['felicidad', 'calma', 'sorpresa', 'atencion', 'tristeza', 'enojo', 'miedo'];
+  const rawProbabilities = primaryFace?.cnnDetails?.classProbabilities || [];
+  const radarData = [...rawProbabilities]
+    .sort((a, b) => {
+      const idxA = canonicalOrder.indexOf(a.emotion.toLowerCase());
+      const idxB = canonicalOrder.indexOf(b.emotion.toLowerCase());
+      return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
+    })
+    .map((cls) => {
+      const shortLabel = cls.label.split(' / ')[0];
+      return {
+        emotion: `${cls.emoji} ${shortLabel}`,
+        fullLabel: `${cls.emoji} ${cls.label}`,
+        probabilidad: cls.probability,
+        fullMark: 100,
+        color: cls.color,
+      };
+    });
 
   const getValenceStyle = (valence: string) => {
     switch (valence?.toLowerCase()) {
@@ -97,6 +151,28 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({
           >
             Ver Historial
           </button>
+
+          {onViewReports && (
+            <button
+              type="button"
+              onClick={onViewReports}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50/80 text-emerald-950 hover:bg-emerald-100 transition-colors font-medium cursor-pointer"
+            >
+              <BarChart3 className="w-3.5 h-3.5 text-emerald-700" />
+              <span>Reportes</span>
+            </button>
+          )}
+
+          {onOpenChat && (
+            <button
+              type="button"
+              onClick={onOpenChat}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 bg-rose-50/80 text-rose-950 hover:bg-rose-100 transition-colors font-medium cursor-pointer"
+            >
+              <MessageSquareHeart className="w-3.5 h-3.5 text-rose-600" />
+              <span>Asistente</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -261,53 +337,110 @@ export const ResultsPage: React.FC<ResultsPageProps> = ({
                 </div>
               </div>
 
-              {/* 7-Class Probability Matrix with Clear Pastel Colors */}
-              <div className="space-y-2.5 pt-1">
-                <div className="flex items-center justify-between text-xs text-stone-700 font-semibold">
-                  <span className="flex items-center gap-1.5">
-                    <Activity className="w-3.5 h-3.5 text-amber-700" />
-                    Distribución de activación de tensores por clase:
-                  </span>
-                  <span className="text-[11px] text-stone-400 font-normal">
-                    Normalización Softmax
-                  </span>
+              {/* Radar Chart & Probability Distribution Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center pt-1">
+                {/* Radar Chart Column (Recharts) */}
+                <div className="lg:col-span-6 min-w-0 w-full bg-[#fbf7f2] rounded-2xl p-4 sm:p-5 border border-[#eadbc9] flex flex-col items-center">
+                  <div className="w-full flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+                      <h4 className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                        <Compass className="w-3.5 h-3.5 text-red-500" />
+                        <span>Gráfico de Radar - Espectro Emocional</span>
+                      </h4>
+                    </div>
+                    <span className="text-[10px] font-medium text-stone-500 bg-white/80 px-2 py-0.5 rounded-md border border-[#eadbc9]">
+                      Recharts
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-stone-500 w-full mb-1">
+                    Visualización radial de las probabilidades estimadas por la red convolucional.
+                  </p>
+
+                  <div className="w-full h-72 sm:h-80 min-w-0 min-h-[280px] flex items-center justify-center">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={240} minHeight={260}>
+                      <RadarChart
+                        cx="50%"
+                        cy="50%"
+                        outerRadius="62%"
+                        data={radarData}
+                        margin={{ top: 15, right: 28, bottom: 15, left: 28 }}
+                      >
+                        <PolarGrid stroke="#e5dcd0" strokeDasharray="3 3" />
+                        <PolarAngleAxis
+                          dataKey="emotion"
+                          tick={{ fill: '#44403c', fontSize: 11, fontWeight: 600 }}
+                        />
+                        <PolarRadiusAxis
+                          angle={90}
+                          domain={[0, 100]}
+                          tick={{ fill: '#78716c', fontSize: 10 }}
+                          stroke="#d6c7b2"
+                        />
+                        <Radar
+                          name="Probabilidad CNN"
+                          dataKey="probabilidad"
+                          stroke="#ef4444"
+                          fill="#ef4444"
+                          fillOpacity={0.32}
+                          strokeWidth={2}
+                          dot={{ r: 3.5, fill: '#ef4444', strokeWidth: 1.5, stroke: '#ffffff' }}
+                          activeDot={{ r: 5.5, fill: '#b91c1c', stroke: '#ffffff', strokeWidth: 2 }}
+                        />
+                        <Tooltip content={<CustomRadarTooltip />} />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {primaryFace.cnnDetails.classProbabilities.map((cls, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3 rounded-2xl border text-xs flex flex-col justify-between gap-1.5 transition-all"
-                      style={{
-                        backgroundColor: cls.bgLight,
-                        borderColor: cls.borderLight,
-                      }}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-base">{cls.emoji}</span>
-                          <span className="font-bold text-stone-800">{cls.label}</span>
-                        </div>
-                        <span
-                          className="font-mono font-extrabold text-xs"
-                          style={{ color: cls.color }}
-                        >
-                          {cls.probability}%
-                        </span>
-                      </div>
+                {/* 7-Class Probability Matrix Column */}
+                <div className="lg:col-span-6 space-y-2.5">
+                  <div className="flex items-center justify-between text-xs text-stone-700 font-semibold">
+                    <span className="flex items-center gap-1.5">
+                      <Activity className="w-3.5 h-3.5 text-amber-700" />
+                      Distribución de activación de tensores por clase:
+                    </span>
+                    <span className="text-[11px] text-stone-400 font-normal">
+                      Normalización Softmax
+                    </span>
+                  </div>
 
-                      {/* Mini progress bar */}
-                      <div className="w-full bg-white/70 h-2 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all duration-500"
-                          style={{
-                            width: `${Math.min(100, Math.max(4, cls.probability))}%`,
-                            backgroundColor: cls.color,
-                          }}
-                        />
+                  <div className="grid grid-cols-1 gap-2">
+                    {primaryFace.cnnDetails.classProbabilities.map((cls, idx) => (
+                      <div
+                        key={idx}
+                        className="p-2.5 rounded-2xl border text-xs flex flex-col justify-between gap-1 transition-all"
+                        style={{
+                          backgroundColor: cls.bgLight,
+                          borderColor: cls.borderLight,
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-base">{cls.emoji}</span>
+                            <span className="font-bold text-stone-800">{cls.label}</span>
+                          </div>
+                          <span
+                            className="font-mono font-extrabold text-xs"
+                            style={{ color: cls.color }}
+                          >
+                            {cls.probability}%
+                          </span>
+                        </div>
+
+                        {/* Mini progress bar */}
+                        <div className="w-full bg-white/70 h-2 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{
+                              width: `${Math.min(100, Math.max(4, cls.probability))}%`,
+                              backgroundColor: cls.color,
+                            }}
+                          />
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
